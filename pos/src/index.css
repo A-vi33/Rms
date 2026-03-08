@@ -1,0 +1,11 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --primary: #FF7A00;
+  --secondary: #0f172a;
+}
+
+.shadow-soft { @apply shadow-md hover:shadow-xl transition-shadow; }
+.card-base { @apply bg-white rounded-xl border border-gray-200; }
