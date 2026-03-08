@@ -1,20 +1,22 @@
 import React, { useState } from 'react'
 import tw, { styled, css } from 'twin.macro'
-import { auth, firebaseReady, googleProvider } from '../lib/firebase'
-import { signInWithEmailAndPassword, signInWithPopup } from 'firebase/auth'
-import { Link, useSearchParams } from 'react-router-dom'
+import { auth, db, firebaseReady, googleProvider } from '../config/firebase'
+import { signInWithEmailAndPassword, signInWithPopup, signOut } from 'firebase/auth'
+import { doc, getDoc } from 'firebase/firestore'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { ArrowLeft, User, Lock, Mail, Chrome, Shield, ChefHat, Monitor, TrendingUp, ClipboardList } from 'lucide-react'
+import { parseRoleId, roleMeta } from '../config/roles'
 
 // Role configs to reuse styles
-const roleConfig: Record<string, { color: string; icon: any; title: string }> = {
-  admin: { color: 'red', icon: Shield, title: 'Admin' },
-  manager: { color: 'orange', icon: TrendingUp, title: 'Manager' },
-  kitchen: { color: 'green', icon: ChefHat, title: 'Kitchen Chef' },
-  reception: { color: 'blue', icon: Monitor, title: 'Reception Staff' },
-  employee: { color: 'purple', icon: ClipboardList, title: 'Employee' },
+const roleIconMap = {
+  admin: Shield,
+  manager: TrendingUp,
+  kitchen: ChefHat,
+  reception: Monitor,
+  employee: ClipboardList,
 }
 
-const getGradient = (color: string) => {
+const getGradient = (color) => {
   switch (color) {
     case 'red': return 'linear-gradient(135deg, #be123c 0%, #881337 100%)'
     case 'orange': return 'linear-gradient(135deg, #f97316 0%, #c2410c 100%)'
@@ -42,7 +44,7 @@ const Card = styled.div(() => [
 ])
 
 const Header = tw.div`text-center mb-8`
-const RoleIconWrapper = styled.div(({ color }: { color: string }) => [
+const RoleIconWrapper = styled.div(({ color }) => [
   tw`h-16 w-16 mx-auto rounded-full flex items-center justify-center mb-4 shadow-lg text-white`,
   css`background: ${getGradient(color)};`
 ])
@@ -56,8 +58,9 @@ const Input = styled.input(() => [
   tw`w-full pl-10 pr-4 py-3 bg-white border border-slate-200 rounded-xl text-slate-700 placeholder-slate-400 focus:outline-none transition-all`,
   tw`focus:border-rose-500 focus:ring-2 focus:ring-rose-200`,
 ])
+const TogglePwdBtn = tw.button`absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-700 text-xs font-semibold px-2 py-1 rounded-md bg-slate-100`
 
-const Button = styled.button(({ color }: { color: string }) => [
+const Button = styled.button(({ color }) => [
   tw`w-full py-3 font-bold text-white rounded-xl shadow-lg transition-all transform active:scale-95 flex items-center justify-center gap-2`,
   css`background: ${getGradient(color)};`,
   tw`hover:opacity-90 hover:shadow-xl`,
@@ -78,26 +81,84 @@ const ErrorMsg = tw.div`bg-rose-50 text-rose-600 text-sm px-4 py-3 rounded-lg mb
 
 export default function Login() {
   const [searchParams] = useSearchParams()
-  const roleId = (searchParams.get('role') || '').trim().toLowerCase()
-  const role = roleConfig[roleId] || { color: 'slate', icon: User, title: 'Login' }
+  const navigate = useNavigate()
+  const roleId = parseRoleId(searchParams.get('role'))
+  const role = roleId ? { ...roleMeta[roleId], icon: roleIconMap[roleId] } : { color: 'slate', icon: User, title: 'Login' }
   
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [showPwd, setShowPwd] = useState(false)
   const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState(null)
 
-  const handleEmailLogin = async (e: React.FormEvent) => {
+  const validateRoleAccess = async (userEmail, roleId) => {
+    if (!db) return { success: false, error: 'Database not initialized' }
+    try {
+      const roleDocRef = doc(db, 'roles', roleId)
+      const roleDoc = await getDoc(roleDocRef)
+      
+      if (!roleDoc.exists()) {
+        console.error(`Role configuration for '${roleId}' not found in Firestore.`)
+        return { success: false, error: `System Setup Required: Role '${roleId}' is missing in the database. Please contact admin.` }
+      }
+      
+      const data = roleDoc.data()
+      const allowedEmail = data?.allowed_email
+      
+      if (!allowedEmail) {
+        console.error(`No allowed_email configured for role '${roleId}'`)
+        return { success: false, error: `Configuration Error: Email not set for role '${roleId}'.` }
+      }
+      
+      const isAllowed = userEmail.trim().toLowerCase() === allowedEmail.trim().toLowerCase()
+      if (!isAllowed) {
+        return { success: false, error: `Access Denied: This account is not authorized for ${roleMeta[roleId]?.title}.` }
+      }
+      return { success: true }
+    } catch (err) {
+      console.error('Error validating role access:', err)
+      if (err.code === 'permission-denied') {
+        return { success: false, error: 'Database Permission Denied. Please check Firestore Rules.' }
+      }
+      return { success: false, error: err.message || 'Validation error' }
+    }
+  }
+
+  const handleEmailLogin = async (e) => {
     e.preventDefault()
     if (!auth) {
       setError('Firebase is not configured')
       return
     }
+    
     setLoading(true)
     setError(null)
+    
     try {
-      await signInWithEmailAndPassword(auth, email, password)
-    } catch (err: any) {
-      setError(err?.message || 'Login failed')
+      const cred = await signInWithEmailAndPassword(auth, email, password)
+      const user = cred.user
+      
+      if (roleId) {
+        const result = await validateRoleAccess(user.email || '', roleId)
+        if (!result.success) {
+          await signOut(auth)
+          setError(result.error || 'Access Denied')
+          return
+        }
+        navigate(`/portal/${encodeURIComponent(roleId)}`, { replace: true })
+      } else {
+        // Fallback if no role selected (should not happen in this flow)
+        navigate('/portal', { replace: true })
+      }
+    } catch (err) {
+      console.error('Login error:', err)
+      if (err.code === 'auth/network-request-failed') {
+        setError('Network error: Check your internet connection or disable ad-blockers.')
+      } else if (err.code === 'auth/invalid-credential') {
+        setError('Invalid email or password.')
+      } else {
+        setError(err?.message || 'Login failed')
+      }
     } finally {
       setLoading(false)
     }
@@ -111,8 +172,22 @@ export default function Login() {
     setLoading(true)
     setError(null)
     try {
-      await signInWithPopup(auth, googleProvider)
-    } catch (err: any) {
+      const cred = await signInWithPopup(auth, googleProvider)
+      const user = cred.user
+      
+      if (roleId) {
+        const result = await validateRoleAccess(user.email || '', roleId)
+        if (!result.success) {
+          await signOut(auth)
+          setError(result.error || 'Access Denied')
+          return
+        }
+        navigate(`/portal/${encodeURIComponent(roleId)}`, { replace: true })
+      } else {
+         navigate('/portal', { replace: true })
+      }
+    } catch (err) {
+      console.error('Google login error:', err)
       setError(err?.message || 'Google login failed')
     } finally {
       setLoading(false)
@@ -151,7 +226,7 @@ export default function Login() {
             <Input
               type="email"
               value={email}
-              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEmail(e.target.value)}
+              onChange={(e) => setEmail(e.target.value)}
               placeholder="Email Address"
               required
             />
@@ -160,12 +235,15 @@ export default function Login() {
           <InputGroup>
             <InputIcon><Lock size={18} /></InputIcon>
             <Input
-              type="password"
+              type={showPwd ? 'text' : 'password'}
               value={password}
-              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPassword(e.target.value)}
+              onChange={(e) => setPassword(e.target.value)}
               placeholder="Password"
               required
             />
+            <TogglePwdBtn type="button" onClick={() => setShowPwd((s) => !s)}>
+              {showPwd ? 'Hide' : 'Show'}
+            </TogglePwdBtn>
           </InputGroup>
 
           <Button type="submit" disabled={loading} color={role.color}>

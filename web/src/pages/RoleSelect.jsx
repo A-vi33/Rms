@@ -2,14 +2,7 @@ import React from 'react'
 import tw, { styled, css } from 'twin.macro'
 import { useNavigate } from 'react-router-dom'
 import { Shield, TrendingUp, ChefHat, Monitor, User, ArrowRight, Settings, Utensils, ClipboardList } from 'lucide-react'
-
-type Role = {
-  id: string
-  title: string
-  subtitle: string
-  color: 'red' | 'orange' | 'green' | 'blue' | 'purple'
-  icon: React.ReactNode
-}
+import { roleMeta } from '../config/roles'
 
 // Background that tries to mimic the "luxury restaurant" feel with a radial gradient
 // Ideally, the user would provide the actual background image.
@@ -76,7 +69,7 @@ const RoleCard = styled.div(() => [
   `
 ])
 
-const IconCircle = styled.div(({ bg }: { bg: string }) => [
+const IconCircle = styled.div(({ bg }) => [
   tw`h-16 w-16 rounded-full flex items-center justify-center mb-3 transition-transform duration-300 relative`,
   css`
     background: ${bg};
@@ -93,7 +86,7 @@ const IconCircle = styled.div(({ bg }: { bg: string }) => [
 const CardTitle = tw.h3`text-sm font-bold text-rose-800 leading-tight`
 const CardSub = tw.p`text-[9px] text-slate-500 font-bold mt-1 mb-3 uppercase tracking-wider`
 
-const ActionBtn = styled.button(({ color }: { color: string }) => [
+const ActionBtn = styled.button(({ color }) => [
   tw`w-full py-2 rounded-lg text-white text-xs font-bold flex items-center justify-center gap-1 transition-all shadow-md mt-auto`,
   css`background: ${color};`,
   tw`hover:opacity-90 hover:shadow-lg active:scale-95`
@@ -164,7 +157,7 @@ const Copyright = tw.div`absolute bottom-3 text-[10px] text-slate-500 font-semib
 export default function RoleSelect() {
   const navigate = useNavigate()
 
-  const roles: Role[] = [
+  const roles = [
     {
       id: 'admin',
       title: 'Admin',
@@ -202,7 +195,7 @@ export default function RoleSelect() {
     },
   ]
 
-  const getGradient = (color: Role['color']) => {
+  const getGradient = (color) => {
     switch (color) {
       case 'red': return 'linear-gradient(180deg, #9f1239 0%, #881337 100%)'
       case 'orange': return 'linear-gradient(180deg, #f97316 0%, #ea580c 100%)'
@@ -212,7 +205,7 @@ export default function RoleSelect() {
     }
   }
 
-  const getLightBg = (color: Role['color']) => {
+  const getLightBg = (color) => {
     switch (color) {
       case 'red': return '#ffe4e6' // rose-100
       case 'orange': return '#ffedd5' // orange-100
