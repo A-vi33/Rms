@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Kitchen - Live Menu</title>
+  <link rel="stylesheet" href="/styles.css"/>
+</head>
+<body>
+  <div class="content only">
+    <header class="topbar">
+      <div class="title">Kitchen Menu Update</div>
+      <div class="actions">
+        <button id="addRow">Add Item</button>
+        <button id="saveMenu" class="primary">Broadcast Update</button>
+      </div>
+    </header>
+    <table class="menu-editor" id="editor">
+      <thead>
+        <tr><th>Name</th><th>Price</th><th>Category</th><th>Available</th><th></th></tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
+  <script>
+    async function load(){
+      const res = await fetch('/api/menu'); const data = await res.json();
+      const tb = document.querySelector('#editor tbody'); tb.innerHTML='';
+      data.menu.forEach(addRow);
+      function addRow(item={}){
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td><input value="${item.name||''}"></td>
+          <td><input type="number" min="0" value="${item.price||0}"></td>
+          <td><input value="${item.category||'General'}"></td>
+          <td><input type="checkbox" ${item.available!==false?'checked':''}></td>
+          <td><button class="danger">X</button></td>`;
+        tr.querySelector('button').onclick=()=>tr.remove();
+        tb.appendChild(tr);
+      }
+      document.getElementById('addRow').onclick=()=>addRow({});
+      document.getElementById('saveMenu').onclick=async ()=>{
+        const rows=[...tb.querySelectorAll('tr')].map(tr=>{
+          const [name,price,cat,avail]=tr.querySelectorAll('input');
+          return {name:name.value, price:Number(price.value||0), category:cat.value, available:avail.checked};
+        });
+        await fetch('/api/menu',{method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({items:rows})});
+        alert('Menu broadcasted to reception screens');
+      }
+    }
+    load();
+  </script>
+</body>
+</html>
